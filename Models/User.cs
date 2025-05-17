@@ -7,6 +7,7 @@
         public string PasswordHash { get; set; } = string.Empty;
         public string? Email { get; set; }
         public string? Role { get; set; }  //Roles- Admin, Teacher, Student
+        public bool isActive { get; set; } = true;
 
         //Relationship
         public Student? Student { get; set; }

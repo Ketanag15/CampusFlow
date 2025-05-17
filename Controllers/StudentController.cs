@@ -54,7 +54,7 @@ namespace CampusFlow.Controllers
         }
 
         //Create Student
-        [HttpPost("{add-student}")]
+        [HttpPost]
         [Authorize(Roles = "admin, teacher")]
         public async Task<IActionResult> CreateStudent(Student student)
         {
@@ -107,22 +107,85 @@ namespace CampusFlow.Controllers
         }
 
         //Allows a student to fetch their own data without needing to know their ID.
-        [HttpGet]
+        [HttpGet("me")]
         [Authorize(Roles ="student")]
-        public async Task<IActionResult> GetMyStudentDetails()
+        public async Task<IActionResult> GetOwnStudentRecord()
         {
             var username = User.FindFirstValue(ClaimTypes.Name);
-            var student = await _context.Student.Include(s=> s.User)
-                                                .FirstOrDefaultAsync(s => s.User.UserName == username);
+            var student = await _context.Student.Include(s => s.User)
+                                                .FirstOrDefaultAsync(s=>s.User.UserName == username);
 
             if(student == null)
             {
-                return NotFound();
+                return NotFound("Student Record Not Found.");
             }
 
             return Ok(student);
         }
 
+        //Get Student's assignment
+        [HttpGet("{id}/assignments")]
+        [Authorize(Roles = "admin, teacher, student")]
+        public async Task<IActionResult> GetStudentAssignments(int id)
+        {
+            var role = User.FindFirstValue(ClaimTypes.Role);
+            var username = User.FindFirstValue(ClaimTypes.Name);
+
+            var student = await _context.Student
+                                        .Include(s => s.StudentAssignment)
+                                        .ThenInclude(sa => sa.Assignment)
+                                        .Include(s => s.User)
+                                        .FirstOrDefaultAsync(s => s.StudentId == id);
+
+            if (student == null)
+                return NotFound("Student not found.");
+
+            if (role == "student" && student.User.UserName != username)
+                return Forbid();
+
+            return Ok(student.StudentAssignment);
+        }
+
+        //Get Student's Subject
+        [HttpGet("{id}/subjects")]
+        [Authorize(Roles = "admin, teacher, student")]
+        public async Task<IActionResult> GetStudentSubjects(int id)
+        {
+            var role = User.FindFirstValue(ClaimTypes.Role);
+            var username = User.FindFirstValue(ClaimTypes.Name);
+
+            var student = await _context.Student
+                                        .Include(s => s.StudentSubject)
+                                        .ThenInclude(ss => ss.Subject)
+                                        .Include(s => s.User)
+                                        .FirstOrDefaultAsync(s => s.StudentId == id);
+
+            if (student == null)
+                return NotFound("Student not found.");
+
+            if (role == "student" && student.User.UserName != username)
+                return Forbid();
+
+            return Ok(student.StudentSubject);
+        }
+
+        //Deactivate Student
+        [HttpPatch("{id}/deactivate")]
+        [Authorize(Roles = "admin")]
+        public async Task<IActionResult> DeactivateStudent(int id)
+        {
+            var student = await _context.Student
+                .Include(s => s.User)
+                .FirstOrDefaultAsync(s => s.StudentId == id);
+
+            if (student == null)
+                return NotFound("Student not found.");
+
+            student.User.isActive = false; // You need to ensure `IsActive` exists in the User model
+            await _context.SaveChangesAsync();
+
+            return Ok("Student deactivated.");
+        }
 
     }
 }
