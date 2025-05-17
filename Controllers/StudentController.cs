@@ -1,104 +1,128 @@
-﻿//using Microsoft.AspNetCore.Components;
-using CampusFlow.Data;
+﻿using CampusFlow.Data;
 using CampusFlow.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Formats.Asn1;
+using System.Security.Claims;
 
 namespace CampusFlow.Controllers
 {
-    [Route("api/[controller")]
+    [Route("api/[controller]")]
     [ApiController]
-
     public class StudentController : ControllerBase
     {
-        private readonly CampusFlowDbContext _DbContext;
+        private readonly CampusFlowDbContext _context;
+        private readonly IConfiguration _configuration;
 
-        public StudentController(CampusFlowDbContext dbContext)
+        public StudentController(CampusFlowDbContext context, IConfiguration configuration)
         {
-            _DbContext = dbContext;
+            _context = context;
+            _configuration = configuration;
         }
 
-        //GET api for all students accessed only by teachers and admins
-        [Authorize(Roles = "admin, teacher")]
-        [HttpGet("allStudents")]
-        public IActionResult GetAllStudents()
+        //Get All Students
+        [HttpGet]
+        [Authorize(Roles ="admin, teacher")]
+        public async Task<IActionResult> GetAllStudents()
         {
-            var students = _DbContext.Student.ToList();
+            var students = _context.Student.Include(s => s.User).ToListAsync();
             return Ok(students);
         }
 
-        [Authorize(Roles = "admin,teacher,student")]
-        [HttpGet("student/{id}")]
-        public IActionResult GetStudentById(int id)
+        //Get Student By Id
+        [HttpGet("{id}")]
+        [Authorize(Roles ="admin, teacher, student")]
+        public async Task<IActionResult> GetStudentById(int id)
         {
-            var currentUser = User.Identity.Name;
+            var role = User.FindFirstValue(ClaimTypes.Role);
+            var username = User.FindFirstValue(ClaimTypes.Name);
 
-            if(User.IsInRole("Student") && currentUser != id.ToString())
+            var student = await _context.Student.Include(s => s.User).FirstOrDefaultAsync(s => s.StudentId == id);
+            if (student == null)
             {
-                return Unauthorized("You can see only your record. Not of others.");
+                return NotFound("Student Not Found");
             }
 
-            var student = _DbContext.Student.FirstOrDefault(s => s.StudentId == id);
-            if(student == null)
+            //If Student is accessing , ensure that they can access only their data.
+            if(role == "student" && student.User.UserName != username)
             {
-                return NotFound("Student not found.");
+                return Forbid();
             }
+
             return Ok(student);
         }
 
-        [Authorize(Roles ="admin, teacher")]
-        [HttpPost("addStudent")]
-        public IActionResult CreateStudent([FromBody] Student student)
+        //Create Student
+        [HttpPost("{add-student}")]
+        [Authorize(Roles = "admin, teacher")]
+        public async Task<IActionResult> CreateStudent(Student student)
         {
-            if(student == null)
-            {
-                return BadRequest("Invalid Student Data.");
-            }
-
-            _DbContext.Student.Add(student);
-            _DbContext.SaveChanges();
+            _context.Student.Add(student);
+            await _context.SaveChangesAsync();
             return CreatedAtAction(nameof(GetStudentById), new { id = student.StudentId }, student);
         }
 
-        [Authorize(Roles ="admin")]
-        [HttpDelete("deleteStudent/{id}")]
-        public IActionResult DeleteStudent(int id)
-        {
-            var student = _DbContext.Student.FirstOrDefault(s => s.StudentId==id);
-            if(student != null)
-            {
-                return NotFound("Student not found");
-            }
-
-            _DbContext.Student.Remove(student);
-            _DbContext.SaveChanges();
-            return NoContent();
-        }
-
-        // PUT: api/students/{id} (admin, teacher, or the student themselves)
-        [Authorize(Roles = "admin,teacher")]
+        //Update Student
         [HttpPut("{id}")]
-        public IActionResult UpdateStudent(int id, [FromBody] Student student)
+        [Authorize(Roles = "admin, teacher, student")]
+        public async Task<IActionResult> UpdateStudent(int id, Student updatedStudent)
         {
-            var currentUser = User.Identity.Name;
-
-            // A student can only update their own record
-            if (User.IsInRole("student") && currentUser != id.ToString())
+            var existingdata = await _context.Student.FindAsync(id);
+            if (existingdata == null)
             {
-                return Unauthorized("You can only update your own record.");
+                return NotFound();
             }
 
-            var existingStudent = _DbContext.Student.FirstOrDefault(s => s.StudentId == id);
-            if (existingStudent == null) return NotFound("Student not found.");
+            var role = User.FindFirstValue(ClaimTypes.Role);
+            var username = User.FindFirstValue(ClaimTypes.Name);
 
-            // Update fields (you can add specific field updates here if needed)
-            existingStudent.Name = student.Name;
-            existingStudent.EnrollmentDate = student.EnrollmentDate;
-            existingStudent.Major = student.Major;
+            if(role == "student" && existingdata.User.UserName != username)
+            {
+                return Forbid();
+            }
 
-            _DbContext.SaveChanges();
-            return NoContent();
+            existingdata.Name = updatedStudent.Name;
+            existingdata.EnrollmentDate = updatedStudent.EnrollmentDate;
+            existingdata.Major = updatedStudent.Major;
+            await _context.SaveChangesAsync();
+
+            return Ok(existingdata);
         }
+
+        //Delete a student
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "admin, teacher")]
+        public async Task<IActionResult> DeleteStudent(int id)
+        {
+            var student = await _context.Student.FindAsync(id);
+            if (student == null)
+            {
+                return NotFound();
+            }
+            
+            _context.Student.Remove(student);
+            await _context.SaveChangesAsync();
+            return Ok(student);
+        }
+
+        //Allows a student to fetch their own data without needing to know their ID.
+        [HttpGet]
+        [Authorize(Roles ="student")]
+        public async Task<IActionResult> GetMyStudentDetails()
+        {
+            var username = User.FindFirstValue(ClaimTypes.Name);
+            var student = await _context.Student.Include(s=> s.User)
+                                                .FirstOrDefaultAsync(s => s.User.UserName == username);
+
+            if(student == null)
+            {
+                return NotFound();
+            }
+
+            return Ok(student);
+        }
+
+
     }
 }

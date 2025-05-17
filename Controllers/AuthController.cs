@@ -1,4 +1,5 @@
 ﻿//using Microsoft.AspNetCore.Components;
+using CampusFlow.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -19,7 +20,7 @@ namespace CampusFlow.Controllers
         }
 
         [HttpPost("login")]
-        public IActionResult Login([FromBody] LoginModel loginModel)
+        public IActionResult Login([FromBody] Login loginModel)
         {
             if(loginModel.Username == "admin" &&  loginModel.Password == "admin")
             {
@@ -61,11 +62,5 @@ namespace CampusFlow.Controllers
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
-    }
-
-    public class LoginModel
-    {
-        public string? Username { get; set; }
-        public string? Password { get; set; }
     }
 }
